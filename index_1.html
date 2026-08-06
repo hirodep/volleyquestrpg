@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sand Volleyball Tracker — Serve Outside Court</title>
+<style>
+  :root {
+    --sand: #C9AF7A;
+    --net-white: #FAF7F0;
+    --ink: #2B2320;
+    --accent: #2B6CB0;
+    --gold: #C9A227;
+    --kill: #B4502A;
+    --live: #2FA84F;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: linear-gradient(180deg, #EAF4F4 0%, #DCEEF0 15%, var(--sand) 15%);
+    color: var(--ink);
+    min-height: 100vh;
+    padding: 14px;
+    user-select: none;
+  }
+  .wrap { max-width: 480px; margin: 0 auto; }
+  h1 { font-size: 1.15rem; margin: 0 0 2px; }
+  .sub { font-size: 0.78rem; color: #5a4f3f; margin-bottom: 12px; }
+  .court-wrap { background: rgba(255,255,255,0.35); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px; padding: 10px; display: flex; flex-direction: column; }
+  #serveBoxP { order: 1; }
+  #court { order: 2; }
+  #serveBoxX { order: 3; }
+  #hint { order: 4; }
+  .court-wrap.sides-swapped #serveBoxP { order: 3; }
+  .court-wrap.sides-swapped #serveBoxX { order: 1; }
+  .court-wrap.sides-swapped #court { transform: rotate(180deg); }
+  .court-wrap.sides-swapped #court .zone { transform: translate(-50%, -50%) rotate(180deg); }
+  .court-wrap.sides-swapped #court .scoreboard { transform: translate(-50%, -50%) rotate(180deg); }
+  .court-wrap.sides-swapped #court .out-strip { transform: rotate(180deg); }
+  .court-wrap.sides-swapped #court .ball-dot { transform: translate(-50%, -50%) rotate(180deg); }
+  .court-wrap.sides-swapped #court .net-line::before { transform: translate(-50%, -50%) rotate(180deg); }
+
+  .serve-box {
+    height: 40px;
+    margin: 0 0 8px 0;
+    border: 2px dashed var(--gold);
+    border-radius: 8px;
+    background: rgba(201,162,39,0.15);
+    display: flex; align-items: center; justify-content: center;
+    gap: 8px;
+    font-size: 0.6rem; font-weight: 700; color: #6b4f00; letter-spacing: 0.06em;
+    position: relative; cursor: pointer;
+    transition: box-shadow 0.15s ease;
+  }
+  .serve-box:last-of-type { margin: 8px 0 0 0; }
+  .serve-box.has-ball { box-shadow: 0 0 0 3px var(--live), 0 0 12px rgba(47,168,79,0.5); }
+  .serve-ball {
+    width: 16px; height: 16px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #fff, #f2c14e 60%, #d99a2b);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    display: none;
+  }
+  .serve-box.has-ball .serve-ball { display: block; }
+
+  .court {
+    position: relative;
+    background: var(--sand);
+    border-radius: 10px;
+    aspect-ratio: 3 / 4;
+    overflow: hidden;
+    box-shadow: inset 0 0 0 3px rgba(255,255,255,0.5);
+  }
+  svg.trail { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
+  .net-line {
+    position: absolute; top: 50%; left: 0; right: 0; height: 6px;
+    background: var(--ink);
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.15);
+    transform: translateY(-50%); z-index: 3;
+  }
+  .net-line::before {
+    content: 'NET';
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    background: var(--ink); color: #F4F1EA; font-size: 0.5rem; font-weight: 700;
+    padding: 1px 6px; border-radius: 3px; letter-spacing: 0.05em;
+  }
+  .zone {
+    position: absolute;
+    display: flex; align-items: center; justify-content: center;
+    text-align: center;
+    font-weight: 700;
+    z-index: 4; cursor: pointer;
+    transform: translate(-50%, -50%);
+    border-radius: 8px;
+    transition: box-shadow 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+  }
+  .zone.player { width: 15%; height: 7%; background: #DCEBFF; border: 2px solid var(--accent); font-size: 0.55rem; color: #1a3a5c; flex-direction: column; gap: 1px; line-height: 1; }
+  .zone.player .icon { font-size: 1.15rem; line-height: 1; }
+  .zone.player .icon.setter-icon { color: #D6303F; font-weight: 900; }
+  .zone.player .lbl { font-size: 0.55rem; font-weight: 700; }
+  .zone.player.serve { background: #FFE9A8; border-color: var(--gold); color: #6b4f00; }
+  .zone.player.setter { border-color: #6b3fa0; border-width: 2.5px; }
+  body.setup-mode .zone.player { outline: 2px dashed var(--accent); outline-offset: 1px; }
+  body.setup-mode .zone.kz, body.setup-mode .out-strip, body.setup-mode .serve-box { opacity: 0.45; pointer-events: none; }
+  .zone.kz { background: rgba(180,80,42,0.22); border: 1.5px dashed var(--kill); font-size: 0.52rem; color: #6b2c0f; }
+  .zone.kz-corner { width: 15%; height: 21%; }
+  .zone.kz-sliver { width: 12%; height: 12%; }
+  .zone.has-ball { box-shadow: 0 0 0 3px var(--live), 0 0 12px rgba(47,168,79,0.6); }
+  .zone.serve-hidden { opacity: 0; pointer-events: none; }
+
+  .out-strip {
+    position: absolute; left: 0; right: 0; height: 16px;
+    background: repeating-linear-gradient(45deg, #E7A2A2, #E7A2A2 6px, #F4C9C9 6px 12px);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.52rem; font-weight: 700; color: #6b1f1f;
+    z-index: 3; cursor: pointer;
+  }
+
+  .ball-dot {
+    position: absolute; width: 15px; height: 15px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #fff, #f2c14e 60%, #d99a2b);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3); z-index: 5; pointer-events: none;
+    transform: translate(-50%, -50%); transition: left 0.25s ease, top 0.25s ease;
+  }
+
+  .hint { text-align: center; font-size: 0.72rem; color: #4a3f2f; margin-top: 8px; min-height: 18px; }
+  .side-switch-banner {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: var(--gold); color: #3a2a00; text-align: center;
+    font-weight: 800; font-size: 0.8rem; padding: 10px; cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3); display: none;
+  }
+  .game-over-banner {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: var(--ink); color: #F4F1EA; text-align: center;
+    font-weight: 800; font-size: 0.85rem; padding: 12px; display: none;
+  }
+  .panel { background: var(--ink); color: #F4F1EA; border-radius: 14px; padding: 12px; margin-top: 12px; }
+  .panel h2 { font-size: 0.8rem; margin: 0 0 8px; color: #C9AF7A; text-transform: uppercase; letter-spacing: 0.05em; }
+  .event-log { display: flex; flex-direction: column; gap: 5px; max-height: 150px; overflow-y: auto; margin-bottom: 8px; }
+  .event-row { background: rgba(255,255,255,0.06); border-left: 3px solid var(--accent); padding: 5px 7px; border-radius: 4px; font-size: 0.7rem; font-family: 'SF Mono', 'Courier New', monospace; }
+  .event-row.kz { border-left-color: var(--kill); }
+  .event-row.out { border-left-color: #E7A2A2; }
+  .event-row.serve { border-left-color: var(--gold); }
+  .placeholder { font-size: 0.72rem; color: #8a8378; font-style: italic; }
+  .btn-row { display: flex; gap: 8px; margin-top: 8px; }
+  .btn { flex: 1; background: #3a3128; color: #F4F1EA; border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 8px; font-size: 0.72rem; cursor: pointer; }
+  .btn:disabled { opacity: 0.4; }
+  .mode-btn { opacity: 0.55; }
+  .mode-btn.active { opacity: 1; background: var(--accent); border-color: var(--accent); }
+  .match-status { text-align: center; font-size: 0.72rem; font-weight: 700; color: #4a3f2f; margin: 4px 0 8px; }
+  .stats { display: none; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; }
+
+  .attack-panel { margin-top: 10px; background: rgba(180,80,42,0.15); border: 1.5px dashed var(--kill); border-radius: 10px; padding: 10px; }
+  .attack-panel-label { font-size: 0.72rem; font-weight: 700; color: #F2A65A; text-align: center; margin-bottom: 8px; }
+  .attack-btn-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+  .attack-btn {
+    background: #3a3128; color: #F4F1EA; border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 8px; padding: 9px 4px; font-size: 0.68rem; font-weight: 700; cursor: pointer;
+  }
+  .attack-btn:active { background: var(--kill); }
+  .stat { background: rgba(255,255,255,0.06); border-radius: 6px; padding: 5px; text-align: center; }
+  .stat .n { font-size: 0.85rem; font-weight: 700; color: #F2A65A; }
+  .stat .l { font-size: 0.55rem; color: #9a9184; }
+
+  .scoreboard {
+    position: absolute;
+    left: 50%;
+    display: flex; align-items: center; gap: 8px;
+    transform: translate(-50%, -50%);
+    z-index: 4;
+  }
+  .scoreboard .sb-btn {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.55);
+    border: 1.5px solid rgba(0,0,0,0.3);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.85rem; font-weight: 800; color: var(--ink);
+    cursor: pointer; line-height: 1;
+  }
+  .scoreboard .sb-mid { text-align: center; }
+  .scoreboard .sb-num { font-size: 1.4rem; font-weight: 800; color: var(--ink); line-height: 1; }
+  .scoreboard .sb-label { font-size: 0.5rem; letter-spacing: 0.08em; color: #4a3f2f; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="side-switch-banner" id="sideSwitchBanner">🔃 A team reached 11 — time to switch sides! Tap here to switch.</div>
+<div class="game-over-banner" id="gameOverBanner"></div>
+<div class="wrap">
+
+<h1>🏐 Serve-Outside-Court Prototype</h1>
+<div class="sub">Server stands outside the baseline. Their in-court spot hides until the serve crosses over.</div>
+
+<div class="btn-row" id="setupControls" style="margin-bottom:8px; flex-direction: column;">
+  <div class="btn-row" style="margin:0 0 8px;">
+    <button class="btn mode-btn active" id="modeSingleBtn" data-mode="single">1 Game</button>
+    <button class="btn mode-btn" id="modeBo3Btn" data-mode="bo3">Best of 3</button>
+  </div>
+  <button class="btn" id="gameStartBtn" style="background:var(--live);">▶ Game Start</button>
+</div>
+<div class="match-status" id="matchStatus" style="display:none;"></div>
+
+<div class="court-wrap">
+
+  <div class="serve-box" id="serveBoxP" data-team="P" data-label="P1 (serve, outside court)">
+    <div class="serve-ball" id="serveBallP"></div>
+    <span>TEAM P SERVE ZONE</span>
+  </div>
+
+  <div class="court" id="court">
+    <svg class="trail" id="trail"></svg>
+
+    <div class="out-strip" id="outTop" style="top:0" data-team="P">OUT</div>
+
+    <div class="scoreboard" id="sbP" style="top:4%;">
+      <div class="sb-btn" data-team="P" data-delta="-1">−</div>
+      <div class="sb-mid"><div class="sb-num" id="scoreP">0</div><div class="sb-label">TEAM P</div></div>
+      <div class="sb-btn" data-team="P" data-delta="1">+</div>
+    </div>
+
+    <!-- TOP HALF: Team P -->
+    <div class="zone kz kz-corner" style="top:17.5%; left:12%;" data-label="KZ — P2 outside" data-owner="P2">KZ</div>
+    <div class="zone kz kz-corner" style="top:17.5%; left:88%;" data-label="KZ — P1 outside" data-owner="P1">KZ</div>
+    <div class="zone player" id="zP2" style="top:22%; left:30%;" data-label="P2" data-name="P2"><span class="icon">⚔️</span><span class="lbl">P2</span></div>
+    <div class="zone player serve" id="zP1" style="top:22%; left:70%;" data-label="P1 (serve)" data-name="P1"><span class="icon">⚔️</span><span class="lbl">P1</span></div>
+    <div class="zone kz kz-sliver" style="top:24%; left:44%;" data-label="KZ — P2 inside" data-owner="P2">KZ</div>
+    <div class="zone kz kz-sliver" style="top:24%; left:56%;" data-label="KZ — P1 inside" data-owner="P1">KZ</div>
+    <div class="zone kz kz-sliver" style="top:36%; left:44%;" data-label="KZ — P3 inside" data-owner="P3">KZ</div>
+    <div class="zone kz kz-sliver" style="top:36%; left:56%;" data-label="KZ — P4 inside" data-owner="P4">KZ</div>
+    <div class="zone player setter" id="zP3" style="top:38%; left:30%;" data-label="P3" data-name="P3"><span class="icon setter-icon">✚</span><span class="lbl">P3</span></div>
+    <div class="zone player" id="zP4" style="top:38%; left:70%;" data-label="P4" data-name="P4"><span class="icon">⚔️</span><span class="lbl">P4</span></div>
+    <div class="zone kz kz-corner" style="top:38.5%; left:12%;" data-label="KZ — P3 outside" data-owner="P3">KZ</div>
+    <div class="zone kz kz-corner" style="top:38.5%; left:88%;" data-label="KZ — P4 outside" data-owner="P4">KZ</div>
+
+    <div class="net-line"></div>
+
+    <!-- BOTTOM HALF: Team X (mirror of top). X2 is fixed serve position. -->
+    <div class="zone kz kz-corner" style="top:61.5%; left:12%;" data-label="KZ — X3 outside" data-owner="X3">KZ</div>
+    <div class="zone kz kz-corner" style="top:61.5%; left:88%;" data-label="KZ — X4 outside" data-owner="X4">KZ</div>
+    <div class="zone player" id="zX3" style="top:62%; left:30%;" data-label="X3" data-name="X3"><span class="icon">⚔️</span><span class="lbl">X3</span></div>
+    <div class="zone player setter" id="zX4" style="top:62%; left:70%;" data-label="X4" data-name="X4"><span class="icon setter-icon">✚</span><span class="lbl">X4</span></div>
+    <div class="zone kz kz-sliver" style="top:64%; left:44%;" data-label="KZ — X3 inside" data-owner="X3">KZ</div>
+    <div class="zone kz kz-sliver" style="top:64%; left:56%;" data-label="KZ — X4 inside" data-owner="X4">KZ</div>
+    <div class="zone kz kz-sliver" style="top:76%; left:44%;" data-label="KZ — X2 inside" data-owner="X2">KZ</div>
+    <div class="zone kz kz-sliver" style="top:76%; left:56%;" data-label="KZ — X1 inside" data-owner="X1">KZ</div>
+    <div class="zone player serve" id="zX2" style="top:78%; left:30%;" data-label="X2 (serve)" data-name="X2"><span class="icon">⚔️</span><span class="lbl">X2</span></div>
+    <div class="zone player" id="zX1" style="top:78%; left:70%;" data-label="X1" data-name="X1"><span class="icon">⚔️</span><span class="lbl">X1</span></div>
+    <div class="zone kz kz-corner" style="top:82.5%; left:12%;" data-label="KZ — X2 outside" data-owner="X2">KZ</div>
+    <div class="zone kz kz-corner" style="top:82.5%; left:88%;" data-label="KZ — X1 outside" data-owner="X1">KZ</div>
+
+    <div class="out-strip" id="outBottom" style="bottom:0" data-team="X">OUT</div>
+
+    <div class="scoreboard" id="sbX" style="top:96%;">
+      <div class="sb-btn" data-team="X" data-delta="-1">−</div>
+      <div class="sb-mid"><div class="sb-num" id="scoreX">0</div><div class="sb-label">TEAM X</div></div>
+      <div class="sb-btn" data-team="X" data-delta="1">+</div>
+    </div>
+
+    <div class="ball-dot" id="ballDot" style="display:none;"></div>
+  </div>
+
+  <div class="serve-box" id="serveBoxX" data-team="X" data-label="X2 (serve, outside court)">
+    <div class="serve-ball" id="serveBallX"></div>
+    <span>TEAM X SERVE ZONE</span>
+  </div>
+
+  <div class="hint" id="hint">Team P serving. P1's court spot is empty — they're outside on the serve line. Tap TEAM P SERVE ZONE to start.</div>
+</div>
+
+<div class="panel">
+  <h2>Event trail (this rally)</h2>
+  <div class="event-log" id="eventLog"><div class="placeholder">No moves yet.</div></div>
+  <div class="btn-row">
+    <button class="btn" id="undoBtn" disabled>↩ Undo last</button>
+    <button class="btn" id="resetBtn">⟲ New rally</button>
+  </div>
+  <div class="btn-row">
+    <button class="btn" id="newGameBtn">🆕 New Game (reset names &amp; score)</button>
+  </div>
+  <div class="btn-row" id="nextGameRow" style="display:none;">
+    <button class="btn" id="nextGameBtn" style="background:var(--accent);">▶ Next Game</button>
+  </div>
+  <div class="btn-row">
+    <button class="btn" id="rotateP">🔄 Rotate Team P</button>
+    <button class="btn" id="rotateX">🔄 Rotate Team X</button>
+  </div>
+  <div class="attack-panel" id="attackPanel" style="display:none;">
+    <div class="attack-panel-label">Kill! How was it finished?</div>
+    <div class="attack-btn-row">
+      <button class="attack-btn" data-type="Spike">🔥 Spike</button>
+      <button class="attack-btn" data-type="Roll Shot">🎯 Roll Shot</button>
+      <button class="attack-btn" data-type="DBJ">💣 DBJ</button>
+      <button class="attack-btn" data-type="Chi-Over">✋ Chi-Over</button>
+    </div>
+  </div>
+  <div class="stats" id="stats" style="display:none;"></div>
+</div>
+
+</div>
+
+<script>
+  const court = document.getElementById('court');
+  const ballDot = document.getElementById('ballDot');
+  const hint = document.getElementById('hint');
+  const log = document.getElementById('eventLog');
+  const trail = document.getElementById('trail');
+  const undoBtn = document.getElementById('undoBtn');
+  const statsEl = document.getElementById('stats');
+  const zones = Array.from(document.querySelectorAll('.zone'));
+  const outStrips = Array.from(document.querySelectorAll('.out-strip'));
+  const serveBoxes = Array.from(document.querySelectorAll('.serve-box'));
+  const allTiles = [...zones, ...outStrips, ...serveBoxes];
+
+  const zP1 = document.getElementById('zP1');
+  const zX2 = document.getElementById('zX2');
+  const serveBoxP = document.getElementById('serveBoxP');
+  const serveBoxX = document.getElementById('serveBoxX');
+
+  let currentTile = null;
+  let gameStarted = false;
+  let gameOver = false;
+  let currentServingTeam = 'P';
+  let sideSwitchAnnounced = false;
+  let sideSwitchPending = false;
+  const WIN_SCORE = 21;
+  const WIN_BY = 2;
+  const HARD_CAP = 30; // reaching this ends the game outright, win-by-2 or not
+  const SIDE_SWITCH_AT = 11; // first team to reach this score alone triggers the switch (sun position matters, not combined total)
+  let matchMode = 'single'; // 'single' or 'bo3'
+  let gamesWon = { P: 0, X: 0 };
+  let gameNumber = 1;
+  let lastGameLoser = null; // set once a game finishes; next game's server picks itself
+  let matchOver = false;
+  let playerNames = { P1:'', P2:'', P3:'', P4:'', X1:'', X2:'', X3:'', X4:'' };
+  let history = [];
+  let pendingKill = null;
+  let possessionTeam = null;
+  let possessionTouch = 0;
+  let kzHits = { P1:0, P2:0, P3:0, P4:0, X1:0, X2:0, X3:0, X4:0 };
+  let score = { P: 0, X: 0 };
+  const scorePEl = document.getElementById('scoreP');
+  const scoreXEl = document.getElementById('scoreX');
+
+  function teamOf(label) {
+    if (!label) return null;
+    return label.trim().startsWith('P') ? 'P' : (label.trim().startsWith('X') ? 'X' : null);
+  }
+  function serverTileFor(team) { return team === 'P' ? zP1 : zX2; }
+  function serveBoxFor(team) { return team === 'P' ? serveBoxP : serveBoxX; }
+
+  // Names are stored separately from the fixed P1/P2/X1/X2 etc IDs. Those IDs stay
+  // untouched on every data-attribute (data-name, data-label, data-owner) because all
+  // the team/rotation/kill-zone logic keys off them. displayName() is purely cosmetic —
+  // it swaps in the human name wherever we're writing text for the player to read.
+  function displayName(id) {
+    const n = playerNames[id];
+    return (n && n.trim()) ? n.trim() : id;
+  }
+
+  function renderPlayerLabels() {
+    document.querySelectorAll('.zone.player').forEach(tile => {
+      const lbl = tile.querySelector('.lbl');
+      if (lbl) lbl.textContent = displayName(tile.dataset.name);
+    });
+  }
+
+  // Rotation is a pure "musical chairs" name-swap between slot IDs. Court geography
+  // (server tile, setter tile, kill-zone ownership) is always anchored to the slot ID,
+  // never to a name — so rotating never touches any of that logic, only playerNames.
+  // Team P shifts slot-number DOWN by 1 (P1→P4→P3→P2→P1), confirmed against Hiro's example.
+  // Team X is laid out as a mirror of P (server on the left instead of the right), and
+  // testing confirmed it rotates the OPPOSITE direction — slot-number UP by 1
+  // (X2→X3→X4→X1→X2, i.e. mam→lam's spot, lam→jam's spot, jam→pam's spot, pam→mam's spot/server).
+  function rotateTeam(team, opts) {
+    const ids = team === 'P' ? ['P1','P2','P3','P4'] : ['X1','X2','X3','X4'];
+    const oldNames = ids.map(id => playerNames[id]);
+    const n = ids.length;
+    if (team === 'P') {
+      ids.forEach((id, i) => { playerNames[id] = oldNames[(i + 1) % n]; });
+    } else {
+      ids.forEach((id, i) => { playerNames[id] = oldNames[(i - 1 + n) % n]; });
+    }
+    renderPlayerLabels();
+    if (!opts || !opts.silent) {
+      const serverId = team === 'P' ? 'P1' : 'X2';
+      hint.textContent = `Team ${team} rotated — ${displayName(serverId)} now serving.`;
+    }
+  }
+
+  // First game: coin toss. Every game after: whoever lost the last game serves first
+  // (standard volleyball courtesy — the losing side gets the next serve).
+  function pickInitialServer() {
+    if (lastGameLoser) return lastGameLoser;
+    return Math.random() < 0.5 ? 'P' : 'X';
+  }
+
+  function setSetupMode(on) {
+    gameStarted = !on;
+    document.body.classList.toggle('setup-mode', on);
+    document.getElementById('setupControls').style.display = on ? 'flex' : 'none';
+  }
+
+  // Setup mode needs a fully visible, fully tappable board — no ball, no server
+  // tile hidden. startNewRally() hides the server's court tile (zP1/zX2) because
+  // that's correct once play begins, but that's exactly what was blocking taps on
+  // P1 during name entry. This is the setup-only counterpart to startNewRally().
+  function resetSetupBoard() {
+    ballDot.style.display = 'none';
+    serveBoxP.classList.remove('has-ball');
+    serveBoxX.classList.remove('has-ball');
+    zP1.classList.remove('serve-hidden');
+    zX2.classList.remove('serve-hidden');
+    zones.forEach(z => z.classList.remove('has-ball'));
+    outStrips.forEach(o => o.classList.remove('has-ball'));
+    history = [];
+    currentTile = null;
+    redrawTrail();
+    renderLog();
+  }
+
+  function editPlayerName(tile) {
+    const id = tile.dataset.name;
+    const current = playerNames[id] || '';
+    const input = prompt(`Name for ${id}:`, current);
+    if (input !== null) {
+      playerNames[id] = input.trim();
+      renderPlayerLabels();
+    }
+  }
+
+  function renderScore() { scorePEl.textContent = score.P; scoreXEl.textContent = score.X; }
+
+  function checkSideSwitch() {
+    if (!sideSwitchAnnounced && (score.P >= SIDE_SWITCH_AT || score.X >= SIDE_SWITCH_AT)) {
+      sideSwitchAnnounced = true; // guards against re-triggering this check; the flip itself waits for the tap
+      sideSwitchPending = true; // blocks further scoring/gameplay until the banner is tapped
+      const banner = document.getElementById('sideSwitchBanner');
+      banner.textContent = '🔃 A team reached 11 — time to switch sides! Tap here to switch.';
+      banner.style.display = 'block';
+      banner.onclick = () => {
+        document.querySelector('.court-wrap').classList.toggle('sides-swapped');
+        sideSwitchPending = false;
+        banner.style.display = 'none';
+      };
+    }
+  }
+
+  function renderMatchStatus() {
+    const el = document.getElementById('matchStatus');
+    if (matchMode !== 'bo3') { el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    el.textContent = `Best of 3 — Game ${gameNumber} — Series: P ${gamesWon.P}, X ${gamesWon.X}`;
+  }
+
+  function checkGameOver() {
+    if (gameOver) return;
+    const { P, X } = score;
+    const leadScore = Math.max(P, X);
+    const diff = Math.abs(P - X);
+    const winner = P > X ? 'P' : (X > P ? 'X' : null);
+    if (!winner) return;
+    // Standard rule: first to 21, win by 2. Hard cap: 30 ends it outright either way.
+    const hit = leadScore >= HARD_CAP || (leadScore >= WIN_SCORE && diff >= WIN_BY);
+    if (!hit) return;
+
+    gameOver = true;
+    const loser = winner === 'P' ? 'X' : 'P';
+    gamesWon[winner]++;
+    lastGameLoser = loser;
+
+    const winsNeeded = matchMode === 'bo3' ? 2 : 1;
+    const gBanner = document.getElementById('gameOverBanner');
+
+    if (gamesWon[winner] >= winsNeeded) {
+      matchOver = true;
+      const seriesNote = matchMode === 'bo3' ? ` Match: ${gamesWon.P}-${gamesWon.X}.` : '';
+      gBanner.textContent = `🏆 TEAM ${winner} WINS${matchMode === 'bo3' ? ' THE MATCH' : ''} — Game ${gameNumber}: ${P}-${X}.${seriesNote} Tap "New Game" to start over.`;
+      gBanner.style.display = 'block';
+      hint.textContent = `Team ${winner} wins${matchMode === 'bo3' ? ' the match' : ''}, ${P}-${X}.`;
+    } else {
+      gBanner.textContent = `🏆 TEAM ${winner} WINS GAME ${gameNumber} (${P}-${X})! Series: P ${gamesWon.P} - X ${gamesWon.X}. Tap "Next Game" to continue.`;
+      gBanner.style.display = 'block';
+      hint.textContent = `Game ${gameNumber} over — Team ${winner} wins ${P}-${X}.`;
+      document.getElementById('nextGameRow').style.display = 'flex';
+    }
+    renderMatchStatus();
+  }
+
+  function bumpScore(team, delta) {
+    score[team] = Math.max(0, score[team] + delta);
+    renderScore();
+    if (delta > 0) { checkSideSwitch(); checkGameOver(); }
+  }
+
+  document.querySelectorAll('.sb-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); if (gameOver || sideSwitchPending) return; bumpScore(btn.dataset.team, parseInt(btn.dataset.delta, 10)); });
+  });
+
+  function tilePos(el) {
+    if (el.classList.contains('out-strip')) {
+      const rect = el.getBoundingClientRect();
+      const courtRect = court.getBoundingClientRect();
+      return {
+        x: ((rect.left + rect.width/2 - courtRect.left) / courtRect.width) * 100,
+        y: ((rect.top + rect.height/2 - courtRect.top) / courtRect.height) * 100
+      };
+    }
+    return { x: parseFloat(el.style.left), y: parseFloat(el.style.top) };
+  }
+
+  // Applies full visual state from a history entry (single source of truth — used by moves, undo, reset)
+  function applyBallState(entry) {
+    zP1.classList.remove('serve-hidden');
+    zX2.classList.remove('serve-hidden');
+    serveBoxP.classList.remove('has-ball');
+    serveBoxX.classList.remove('has-ball');
+    zones.forEach(z => z.classList.remove('has-ball'));
+    outStrips.forEach(o => o.classList.remove('has-ball'));
+
+    if (entry.serveBoxTeam) {
+      ballDot.style.display = 'none';
+      serverTileFor(entry.serveBoxTeam).classList.add('serve-hidden');
+      const box = serveBoxFor(entry.serveBoxTeam);
+      box.classList.add('has-ball');
+      currentTile = box;
+    } else {
+      ballDot.style.display = 'block';
+      ballDot.style.left = entry.x + '%';
+      ballDot.style.top = entry.y + '%';
+      // Use the actual tile that was tapped (stored on the entry), not a text-match on the
+      // generated label — the generated label ("Received by X2") never matches a tile's
+      // static data-label ("X2 (serve)"), so that lookup always failed silently.
+      if (entry.tileEl) { entry.tileEl.classList.add('has-ball'); currentTile = entry.tileEl; }
+    }
+  }
+
+  function redrawTrail() {
+    const pts3 = history.filter(h => h.x !== null && h.x !== undefined);
+    if (pts3.length < 2) { trail.innerHTML = ''; return; }
+    const pts = pts3.map(h => `${h.x}%,${h.y}%`).join(' ');
+    trail.innerHTML = `
+      <polyline points="${pts}" fill="none" stroke="#2B6CB0" stroke-width="2" stroke-dasharray="4 3" opacity="0.6" vector-effect="non-scaling-stroke"/>
+      ${pts3.map(h => `<circle cx="${h.x}%" cy="${h.y}%" r="3" fill="${h.kz ? '#B4502A' : '#2B6CB0'}" opacity="0.6"/>`).join('')}
+    `;
+  }
+
+  function renderLog() {
+    if (history.length === 0) { log.innerHTML = '<div class="placeholder">No moves yet.</div>'; }
+    else {
+      log.innerHTML = history.map((h, i) =>
+        `<div class="event-row ${h.kz ? 'kz' : ''} ${h.out ? 'out' : ''} ${h.serveBoxTeam ? 'serve' : ''}">#${i+1}  ${h.label}</div>`
+      ).join('');
+      log.scrollTop = log.scrollHeight;
+    }
+    undoBtn.disabled = history.length === 0;
+  }
+
+  function renderStats() {
+    statsEl.innerHTML = Object.keys(kzHits).map(p =>
+      `<div class="stat"><div class="n">${kzHits[p]}</div><div class="l">${p} gaps hit</div></div>`
+    ).join('');
+  }
+
+  function startNewRally(serveTeam) {
+    currentServingTeam = serveTeam;
+    possessionTeam = null;
+    possessionTouch = 0;
+    const box = serveBoxFor(serveTeam);
+    const serverId = serveTeam === 'P' ? 'P1' : 'X2';
+    const label = `${displayName(serverId)} (serve, outside court)`;
+    const entry = { label, kz: false, owner: null, out: false, x: null, y: null, scoredTeam: null, serveBoxTeam: serveTeam, tileEl: box };
+    history = [entry];
+    applyBallState(entry);
+    redrawTrail();
+    renderLog();
+    hint.textContent = `Team ${serveTeam} serving. ${displayName(serverId)}'s court spot is empty. Tap the serve zone to start, then tap where it lands.`;
+  }
+
+  // Side-out = the team that scores this point wasn't the one serving. That's the
+  // only case that auto-rotates. If the serving team just scores again (an ace,
+  // e.g.), nobody rotates — same as real volleyball.
+  function endRallyAndAdvance(scoredTeam) {
+    if (scoredTeam !== currentServingTeam) {
+      rotateTeam(scoredTeam, { silent: true });
+    }
+    startNewRally(scoredTeam);
+  }
+
+  function moveBallTo(tile) {
+    if (pendingKill) return;
+    if (tile === currentTile) return;
+
+    // Serving out of the box — first tap is just "the ball is here", no move needed since it starts there.
+    if (currentTile.classList.contains('serve-box') && !tile.classList.contains('serve-box')) {
+      // ball is crossing from the serve box into the court
+      const team = currentTile.dataset.team;
+      const { x, y } = tilePos(tile);
+      let label = tile.dataset.label;
+      const isKz = tile.classList.contains('kz');
+      const owner = tile.dataset.owner || null;
+      let isOut = false;
+      let scoredTeam = null;
+
+      if (tile.classList.contains('out-strip')) {
+        isOut = true;
+        label = `OUT — service error (side-out)`;
+        scoredTeam = team === 'P' ? 'X' : 'P';
+      }
+      if (isKz && owner) {
+        const ownerTeam = teamOf(owner);
+        scoredTeam = ownerTeam === 'P' ? 'X' : 'P';
+      }
+
+      const isPlayerTile = tile.classList.contains('player');
+      let passQuality = null;
+      if (isPlayerTile) {
+        const pname = displayName(tile.dataset.name) || tile.dataset.label;
+        label = `Received by ${pname}`;
+        possessionTeam = teamOf(tile.dataset.label);
+        possessionTouch = 1;
+        // No good/bad verdict yet — that only applies once the SET attempt (next touch) either reaches the setter or doesn't.
+      }
+
+      const entry = { label, kz: isKz, owner, out: isOut, x, y, scoredTeam, serveBoxTeam: null, passQuality, tileEl: tile };
+      history.push(entry);
+      applyBallState(entry); // this un-hides the server tile automatically since serveBoxTeam is null
+
+      if (isKz && owner) { kzHits[owner]++; renderStats(); bumpScore(scoredTeam, 1); }
+      if (isOut && scoredTeam) { bumpScore(scoredTeam, 1); }
+
+      hint.textContent = isKz ? `Kill! Ball dropped in ${owner}'s gap.` : (isOut ? `${label}.` : `Serve in play — ${label}. ${displayName(team === 'P' ? 'P1' : 'X2')} is back in court.`);
+      redrawTrail();
+      renderLog();
+
+      if ((isKz || isOut) && scoredTeam) {
+        setTimeout(() => endRallyAndAdvance(scoredTeam), 900);
+      }
+      return;
+    }
+
+    // Normal in-court move
+    const { x, y } = tilePos(tile);
+    let label = tile.dataset.label;
+    const isKz = tile.classList.contains('kz');
+    const owner = tile.dataset.owner || null;
+    let isOut = false;
+    let scoredTeam = null;
+
+    if (tile.classList.contains('out-strip')) {
+      isOut = true;
+      const sourceTeam = teamOf(currentTile.dataset.label);
+      const wasServe = currentTile.dataset.label && currentTile.dataset.label.includes('(serve)');
+      label = wasServe ? 'OUT — service error (side-out)' : 'OUT — attack error';
+      if (sourceTeam) scoredTeam = sourceTeam === 'P' ? 'X' : 'P';
+    }
+    if (isKz && owner) {
+      const ownerTeam = teamOf(owner);
+      scoredTeam = ownerTeam === 'P' ? 'X' : 'P';
+      const prevEntry = history[history.length - 1];
+      if (prevEntry && prevEntry.passQuality === 'bad') {
+        label = `Kill — FORCED error (shank off a bad pass)`;
+      } else if (prevEntry && prevEntry.passQuality === 'good') {
+        label = `Kill — UNFORCED error (shank despite a good pass)`;
+      }
+    }
+
+    const isPlayerTile = tile.classList.contains('player');
+    let passQuality = null;
+    if (isPlayerTile) {
+      const pname = displayName(tile.dataset.name) || tile.dataset.label;
+      const destTeam = teamOf(tile.dataset.label);
+
+      if (destTeam === possessionTeam) {
+        // same team continuing to handle the ball
+        possessionTouch++;
+        if (possessionTouch === 2) {
+          passQuality = tile.classList.contains('setter') ? 'good' : 'bad';
+          label = passQuality === 'good'
+            ? `Good pass to setter (${pname})`
+            : `Bad pass — missed setter, played by ${pname}`;
+        } else if (possessionTouch === 3) {
+          label = `Set to ${pname}`;
+        } else {
+          label = `Received by ${pname}`;
+        }
+      } else {
+        // Ball just crossed the net — this describes the attacker's contact.
+        // Credit the player who was JUST holding it (currentTile, the sending side)
+        // — not the tile we're tapping now, which is where it's landing on the
+        // receiving side.
+        const attackerName = displayName(currentTile.dataset.name) || currentTile.dataset.label;
+        label = `Attack player ${attackerName}`;
+        possessionTeam = destTeam;
+        possessionTouch = 1;
+      }
+    }
+
+    const entry = { label, kz: isKz, owner, out: isOut, x, y, scoredTeam, serveBoxTeam: null, passQuality, tileEl: tile };
+    history.push(entry);
+    applyBallState(entry);
+    redrawTrail();
+    renderLog();
+
+    if (isOut && scoredTeam) {
+      bumpScore(scoredTeam, 1);
+      hint.textContent = `${label}.`;
+      setTimeout(() => endRallyAndAdvance(scoredTeam), 900);
+      return;
+    }
+
+    if (isKz && owner) {
+      // Pause here — wait for Spike / Roll Shot / DBJ / Chi-Over before finalizing the point
+      pendingKill = { entry, owner, scoredTeam };
+      undoBtn.disabled = true;
+      document.getElementById('resetBtn').disabled = true;
+      document.getElementById('attackPanel').style.display = 'block';
+      hint.textContent = `Ball dropped in ${owner}'s gap — tap how it was finished.`;
+      return;
+    }
+
+    hint.textContent = `${label}.`;
+  }
+
+  document.querySelectorAll('.attack-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!pendingKill) return;
+      const { entry, owner, scoredTeam } = pendingKill;
+      entry.label = `${entry.label} — ${btn.dataset.type}`;
+      kzHits[owner]++; renderStats();
+      bumpScore(scoredTeam, 1);
+      renderLog();
+      document.getElementById('attackPanel').style.display = 'none';
+      undoBtn.disabled = false;
+      document.getElementById('resetBtn').disabled = false;
+      hint.textContent = `${entry.label}.`;
+      pendingKill = null;
+      setTimeout(() => endRallyAndAdvance(scoredTeam), 900);
+    });
+  });
+
+  allTiles.forEach(tile => {
+    tile.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (gameOver || sideSwitchPending) return;
+      if (!gameStarted) {
+        if (tile.classList.contains('player')) editPlayerName(tile);
+        return; // kz/out/serve-box tiles do nothing while still in setup
+      }
+      moveBallTo(tile);
+    });
+  });
+
+  document.getElementById('rotateP').addEventListener('click', () => rotateTeam('P'));
+  document.getElementById('rotateX').addEventListener('click', () => rotateTeam('X'));
+
+  document.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      matchMode = btn.dataset.mode;
+      document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b === btn));
+      renderMatchStatus();
+    });
+  });
+
+  document.getElementById('gameStartBtn').addEventListener('click', () => {
+    setSetupMode(false);
+    const starter = pickInitialServer();
+    hint.textContent = lastGameLoser
+      ? `Game on! Team ${starter} serves first (lost the last game). Tap TEAM ${starter} SERVE ZONE to start.`
+      : `🪙 Coin toss: Team ${starter} serves first! Tap TEAM ${starter} SERVE ZONE to start.`;
+    renderMatchStatus();
+    startNewRally(starter);
+  });
+
+  document.getElementById('nextGameBtn').addEventListener('click', () => {
+    document.getElementById('nextGameRow').style.display = 'none';
+    document.getElementById('gameOverBanner').style.display = 'none';
+    gameNumber++;
+    gameOver = false;
+    sideSwitchAnnounced = false;
+    sideSwitchPending = false;
+    document.querySelector('.court-wrap').classList.remove('sides-swapped');
+    score = { P: 0, X: 0 };
+    renderScore();
+    kzHits = { P1:0, P2:0, P3:0, P4:0, X1:0, X2:0, X3:0, X4:0 };
+    renderStats();
+    renderMatchStatus();
+    const starter = pickInitialServer();
+    hint.textContent = `Game ${gameNumber} — Team ${starter} serves first (lost the last game). Tap TEAM ${starter} SERVE ZONE to start.`;
+    startNewRally(starter);
+  });
+
+  document.getElementById('newGameBtn').addEventListener('click', () => {
+    setSetupMode(true);
+    gameOver = false;
+    matchOver = false;
+    sideSwitchAnnounced = false;
+    sideSwitchPending = false;
+    currentServingTeam = 'P';
+    gamesWon = { P: 0, X: 0 };
+    gameNumber = 1;
+    lastGameLoser = null;
+    document.getElementById('sideSwitchBanner').style.display = 'none';
+    document.getElementById('gameOverBanner').style.display = 'none';
+    document.getElementById('nextGameRow').style.display = 'none';
+    document.querySelector('.court-wrap').classList.remove('sides-swapped');
+    playerNames = { P1:'', P2:'', P3:'', P4:'', X1:'', X2:'', X3:'', X4:'' };
+    renderPlayerLabels();
+    score = { P: 0, X: 0 };
+    renderScore();
+    kzHits = { P1:0, P2:0, P3:0, P4:0, X1:0, X2:0, X3:0, X4:0 };
+    renderStats();
+    renderMatchStatus();
+    hint.textContent = 'Tap a player tile to enter their name, then hit Game Start.';
+    resetSetupBoard();
+  });
+
+  undoBtn.addEventListener('click', () => {
+    if (history.length === 0) return;
+    const removed = history.pop();
+    if (removed.kz && removed.owner) { kzHits[removed.owner]--; renderStats(); }
+    if (removed.scoredTeam) { bumpScore(removed.scoredTeam, -1); }
+
+    if (history.length === 0) {
+      // back to absolute start — re-seed at whoever is actually serving this rally
+      startNewRally(currentServingTeam);
+      return;
+    }
+    const last = history[history.length - 1];
+    applyBallState(last);
+    redrawTrail();
+    renderLog();
+    hint.textContent = `Undone. Back to ${last.label}.`;
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', () => startNewRally(currentServingTeam));
+
+  // init
+  setSetupMode(true);
+  renderPlayerLabels();
+  hint.textContent = 'Tap a player tile to enter their name, then hit Game Start.';
+  resetSetupBoard();
+  renderStats();
+  renderMatchStatus();
+</script>
+</body>
+</html>
